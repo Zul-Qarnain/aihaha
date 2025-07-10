@@ -20,7 +20,7 @@ export interface Vote {
   votedForId: string;
 }
 
-export type GamePhase = 'CHAT' | 'RESULTS';
+export type GamePhase = 'CHAT' | 'VOTING' | 'RESULTS';
 
 export interface GameSettings {
   playerCount: number;

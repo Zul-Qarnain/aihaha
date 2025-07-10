@@ -1,3 +1,4 @@
+
 "use client";
 
 import { type Player, type Vote } from "@/types";
@@ -11,6 +12,7 @@ interface PlayerGridProps {
   humanVote?: string | null;
   votes?: Vote[];
   isResultsPhase?: boolean;
+  hasHumanVotedThisRound?: boolean;
 }
 
 export function PlayerGrid({
@@ -19,7 +21,8 @@ export function PlayerGrid({
   onVote,
   humanVote,
   votes = [],
-  isResultsPhase = false
+  isResultsPhase = false,
+  hasHumanVotedThisRound = false,
 }: PlayerGridProps) {
     const voteCounts = votes.reduce((acc, vote) => {
         acc[vote.votedForId] = (acc[vote.votedForId] || 0) + 1;
@@ -38,6 +41,7 @@ export function PlayerGrid({
                 humanVote={humanVote}
                 votesReceivedCount={voteCounts[player.id] || 0}
                 isRevealed={isResultsPhase || player.status === 'kicked'}
+                hasHumanVotedThisRound={hasHumanVotedThisRound}
             />
         ))}
         </div>

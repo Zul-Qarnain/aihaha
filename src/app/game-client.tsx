@@ -10,11 +10,18 @@ import { useToast } from "@/hooks/use-toast";
 import { type GamePhase, type Message, type Player, type Vote, type GameSettings } from "@/types";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { PlayerKickedDialog } from "@/components/player-kicked-dialog";
+import { HowToVoteDialog } from "@/components/how-to-vote-dialog";
 
 const GAME_DURATION = 360; // 6 minutes
-const VOTE_DELAY = 30; // 30 seconds
-const VOTE_THRESHOLD_PERCENT = 0.4;
+const VOTING_DURATION = 30; // 30 seconds
+const KICK_VOTE_THRESHOLD = 3;
 const HUMAN_PLAYER_ID = "player_1";
+
+const VOTING_ROUNDS_START_TIMES = [
+  GAME_DURATION - 30,  // Round 1 at 00:30 (5:30 left)
+  GAME_DURATION - 120, // Round 2 at 02:00 (4:00 left)
+  GAME_DURATION - 210, // Round 3 at 03:30 (2:30 left)
+];
 
 const availablePlayerPool: Omit<Player, 'id' | 'isAi' | 'status'>[] = [
     { name: 'Cyra', avatar: 'https://placehold.co/128x128/3E54A3/FFFFFF.png', 'data-ai-hint': 'cyborg woman' },
@@ -70,23 +77,27 @@ interface GameState {
   typingPlayers: Set<string>;
   timeLeft: number;
   votes: Vote[];
-  isVotingEnabled: boolean;
   kickedPlayer: Player | null;
   aiCount: number;
   humanVote: string | null;
+  showVoteDialog: boolean;
+  currentVotingRound: number;
+  hasHumanVotedThisRound: boolean;
 }
 
 type Action =
   | { type: "ADD_MESSAGE"; payload: Message }
   | { type: "SET_TYPING"; payload: { playerId: string; isTyping: boolean } }
   | { type: "CAST_VOTE"; payload: Vote }
-  | { type: "END_GAME"; payload: { humansWin: boolean } }
+  | { type: "END_GAME" }
   | { type: "TICK_TIMER" }
-  | { type: "ENABLE_VOTING" }
+  | { type: "SHOW_VOTE_DIALOG"; payload: boolean }
+  | { type: "START_VOTING_ROUND" }
+  | { type: "END_VOTING_ROUND" }
+  | { type: "PROCESS_VOTES" }
   | { type: "KICK_PLAYER"; payload: { playerId: string } }
   | { type: "CLOSE_KICK_DIALOG" }
-  | { type: "SET_HUMAN_VOTE"; payload: { playerId: string } }
-  | { type: "RESET_VOTES" };
+  | { type: "SET_HUMAN_VOTE"; payload: { playerId: string } };
 
 const initialState: Omit<GameState, 'players' | 'aiCount'> = {
   phase: "CHAT",
@@ -94,9 +105,11 @@ const initialState: Omit<GameState, 'players' | 'aiCount'> = {
   typingPlayers: new Set(),
   timeLeft: GAME_DURATION,
   votes: [],
-  isVotingEnabled: false,
   kickedPlayer: null,
-  humanVote: null
+  humanVote: null,
+  showVoteDialog: false,
+  currentVotingRound: 0,
+  hasHumanVotedThisRound: false,
 };
 
 function gameReducer(state: GameState, action: Action): GameState {
@@ -115,37 +128,47 @@ function gameReducer(state: GameState, action: Action): GameState {
         }
         return { ...state, timeLeft: state.timeLeft - 1 };
     }
-    case "ENABLE_VOTING":
-      return { ...state, isVotingEnabled: true };
+    case "SHOW_VOTE_DIALOG":
+        return { ...state, showVoteDialog: action.payload };
+    case "START_VOTING_ROUND":
+        return {
+            ...state,
+            phase: 'VOTING',
+            showVoteDialog: false,
+            currentVotingRound: state.currentVotingRound + 1,
+            votes: [],
+            humanVote: null,
+            hasHumanVotedThisRound: false,
+            timeLeft: state.phase === 'VOTING' ? state.timeLeft : VOTING_DURATION,
+        };
+    case "END_VOTING_ROUND":
+        return { ...state, phase: 'CHAT', timeLeft: state.timeLeft };
+    case "PROCESS_VOTES": {
+        const voteCounts = state.votes.reduce((acc, vote) => {
+            acc[vote.votedForId] = (acc[vote.votedForId] || 0) + 1;
+            return acc;
+        }, {} as Record<string, number>);
+
+        const playerToKick = Object.keys(voteCounts).find(playerId => voteCounts[playerId] >= KICK_VOTE_THRESHOLD);
+        
+        if (playerToKick) {
+             const kickedPlayer = state.players.find(p => p.id === playerToKick)!;
+             const newPlayers = state.players.map(p => p.id === playerToKick ? { ...p, status: 'kicked' as const } : p);
+             const remainingAiCount = kickedPlayer.isAi ? state.aiCount - 1 : state.aiCount;
+             const systemMessage: Message = {
+                id: `system_${Date.now()}`,
+                player: { id: "system", name: "System", avatar: "", isAi: false, status: 'active' },
+                text: `${kickedPlayer.name} has been voted out. They were ${kickedPlayer.isAi ? 'an AI' : 'a Human'}.`,
+             }
+             return { ...state, kickedPlayer, players: newPlayers, aiCount: remainingAiCount, messages: [...state.messages, systemMessage] };
+        }
+        return state;
+    }
     case "SET_HUMAN_VOTE":
-      return { ...state, humanVote: action.payload.playerId };
+      return { ...state, humanVote: action.payload.playerId, hasHumanVotedThisRound: true };
     case "CAST_VOTE": {
-      // Allow changing vote
       const otherVotes = state.votes.filter(v => v.voterId !== action.payload.voterId);
       return { ...state, votes: [...otherVotes, action.payload] };
-    }
-    case "RESET_VOTES":
-      return { ...state, votes: [], humanVote: null };
-    case "KICK_PLAYER": {
-      const kickedPlayer = state.players.find(p => p.id === action.payload.playerId);
-      if (!kickedPlayer) return state;
-
-      const newPlayers = state.players.map(p => p.id === action.payload.playerId ? { ...p, status: 'kicked' as const } : p);
-      const remainingAiCount = kickedPlayer.isAi ? state.aiCount - 1 : state.aiCount;
-      
-      const systemMessage: Message = {
-        id: `system_${Date.now()}`,
-        player: { id: "system", name: "System", avatar: "", isAi: false, status: 'active' },
-        text: `${kickedPlayer.name} has been voted out. They were ${kickedPlayer.isAi ? 'an AI' : 'a Human'}.`,
-      }
-
-      return {
-          ...state,
-          players: newPlayers,
-          kickedPlayer,
-          aiCount: remainingAiCount,
-          messages: [...state.messages, systemMessage]
-      };
     }
     case "CLOSE_KICK_DIALOG":
         return {...state, kickedPlayer: null};
@@ -171,24 +194,34 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
   });
 
   const { toast } = useToast();
-  const timerRef = useRef<NodeJS.Timeout>();
+  const gameTimerRef = useRef<NodeJS.Timeout>();
+  const voteTimerRef = useRef<NodeJS.Timeout>();
 
   // Main game timer
   useEffect(() => {
-    if (state.phase === "CHAT" && state.timeLeft > 0) {
-      timerRef.current = setInterval(() => dispatch({ type: "TICK_TIMER" }), 1000);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [state.phase, state.timeLeft]);
+    gameTimerRef.current = setInterval(() => dispatch({ type: "TICK_TIMER" }), 1000);
+    return () => clearInterval(gameTimerRef.current);
+  }, []);
 
-  // Enable voting after delay
+  // Voting round trigger
   useEffect(() => {
-    if (state.phase === "CHAT") {
-        const votingTimer = setTimeout(() => {
-            dispatch({ type: "ENABLE_VOTING" });
-        }, VOTE_DELAY * 1000);
-        return () => clearTimeout(votingTimer);
+    if (state.phase === 'CHAT' && VOTING_ROUNDS_START_TIMES.includes(state.timeLeft)) {
+        dispatch({ type: "SHOW_VOTE_DIALOG", payload: true });
     }
+  }, [state.timeLeft, state.phase]);
+
+  // Voting round timer & logic
+  useEffect(() => {
+    if (state.phase === 'VOTING') {
+      // AI Voting Logic
+      triggerAiVotes();
+      
+      voteTimerRef.current = setTimeout(() => {
+        dispatch({ type: 'PROCESS_VOTES' });
+        dispatch({ type: 'END_VOTING_ROUND' });
+      }, VOTING_DURATION * 1000);
+    }
+    return () => clearTimeout(voteTimerRef.current);
   }, [state.phase]);
 
   // Check for game end conditions
@@ -197,35 +230,14 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
     const activeHumans = activePlayers.filter(p => !p.isAi);
 
     if (state.aiCount === 0) {
-        dispatch({ type: 'END_GAME', payload: { humansWin: true } });
-    } else if (activeHumans.length === 0) {
-        dispatch({ type: 'END_GAME', payload: { humansWin: false } });
-    } else if (state.timeLeft === 0 && state.phase === 'CHAT') {
-        dispatch({ type: 'END_GAME', payload: { humansWin: false } });
+        dispatch({ type: 'END_GAME' });
+    } else if (activeHumans.length <= 1) { // AI wins if only one human is left
+        dispatch({ type: 'END_GAME' });
+    } else if (state.timeLeft === 0 && state.phase !== 'RESULTS') {
+        dispatch({ type: 'END_GAME' });
     }
 
   }, [state.players, state.aiCount, state.timeLeft, state.phase]);
-
-
-  // Vote counting and player kicking logic
-  useEffect(() => {
-    const voteCounts = state.votes.reduce((acc, vote) => {
-        acc[vote.votedForId] = (acc[vote.votedForId] || 0) + 1;
-        return acc;
-    }, {} as Record<string, number>);
-
-    const activePlayerCount = state.players.filter(p => p.status === 'active').length;
-    const threshold = Math.ceil(activePlayerCount * VOTE_THRESHOLD_PERCENT);
-
-    for (const playerId in voteCounts) {
-        if (voteCounts[playerId] >= threshold) {
-            dispatch({ type: "KICK_PLAYER", payload: { playerId } });
-            dispatch({ type: "RESET_VOTES" });
-            break; 
-        }
-    }
-  }, [state.votes, state.players]);
-
 
   const handleSendMessage = async (text: string) => {
     const humanPlayer = state.players.find((p) => p.id === HUMAN_PLAYER_ID)!;
@@ -235,17 +247,16 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
       text,
     };
     dispatch({ type: "ADD_MESSAGE", payload: newMessage });
-    triggerAiResponses(text);
+    triggerAiChatResponses(text);
   };
   
-  const triggerAiResponses = async (latestMessage: string) => {
+  const triggerAiChatResponses = async (latestMessage: string) => {
     const chatHistory = state.messages
       .map((msg) => `${msg.player.name}: ${msg.text}`)
       .join("\n");
 
     for (const player of state.players) {
       if (player.isAi && player.status === 'active') {
-        // Chat response
         setTimeout(async () => {
           dispatch({ type: "SET_TYPING", payload: { playerId: player.id, isTyping: true } });
           try {
@@ -267,13 +278,19 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
 
           } catch (error) {
             console.error("AI response error:", error);
+            toast({ title: "AI Error", description: "Could not get AI response.", variant: "destructive"});
             dispatch({ type: "SET_TYPING", payload: { playerId: player.id, isTyping: false } });
           }
         }, 500 + Math.random() * 1500);
+      }
+    }
+  };
 
-        // AI Voting logic
-        if (state.isVotingEnabled) {
-            setTimeout(async () => {
+  const triggerAiVotes = async () => {
+    const chatHistory = state.messages.map((msg) => `${msg.player.name}: ${msg.text}`).join("\n");
+    for (const player of state.players) {
+        if (player.isAi && player.status === 'active') {
+             setTimeout(async () => {
                 try {
                     const otherPlayers = state.players.filter(p => p.id !== player.id && p.status === 'active');
                     const voteDecision = await decideAiVote({
@@ -284,23 +301,16 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
                     dispatch({ type: 'CAST_VOTE', payload: { voterId: player.id, votedForId: voteDecision.votedForPlayerId } });
                 } catch (error) {
                     console.error("AI vote error:", error);
+                    toast({ title: "AI Error", description: "Could not get AI vote.", variant: "destructive"});
                 }
-            }, 3000 + Math.random() * 5000);
+            }, 1000 + Math.random() * 4000); // Stagger AI votes
         }
-      }
     }
   };
 
   const handleVote = (votedForId: string) => {
-    if (votedForId === state.humanVote) { // unvote
-        const newVotes = state.votes.filter(v => v.voterId !== HUMAN_PLAYER_ID);
-        dispatch({ type: 'RESET_VOTES' }); // Bit of a hack to trigger re-render
-        dispatch({ type: 'CAST_VOTE', payload: {voterId: 'temp', votedForId: 'temp'} }); // to clear old votes
-        dispatch({ type: 'CAST_VOTE', payload: {voterId: HUMAN_PLAYER_ID, votedForId: ''} }); // to clear old votes
-        setTimeout(() => {
-            state.votes.forEach(v => dispatch({ type: 'CAST_VOTE', payload: v}));
-        }, 10)
-        
+    if (state.hasHumanVotedThisRound) {
+        toast({ title: "Already Voted", description: "You can only vote once per round.", variant: "destructive" });
         return;
     }
     dispatch({ type: 'SET_HUMAN_VOTE', payload: { playerId: votedForId }});
@@ -308,28 +318,42 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
   };
 
   const activeHumans = state.players.filter(p => !p.isAi && p.status === 'active');
-  const humansWin = state.aiCount === 0 || (state.phase === 'RESULTS' && state.aiCount === 0);
-  const aiWins = activeHumans.length === 0 || (state.phase === 'RESULTS' && state.aiCount > 0);
+  const humansWin = state.aiCount === 0;
+  const aiWins = !humansWin;
+
+  const getTimerDetails = () => {
+    if (state.phase === 'VOTING') {
+        return { duration: VOTING_DURATION, time: state.timeLeft, text: `Voting Round ${state.currentVotingRound}` };
+    }
+    return { duration: GAME_DURATION, time: state.timeLeft, text: 'Chat & Deduce' };
+  }
+
+  const timerDetails = getTimerDetails();
 
   return (
     <div
       className="w-full h-full bg-background text-foreground flex flex-col font-body fade-in"
     >
-      <GameHeader phase={state.phase} timeLeft={state.timeLeft} />
+      <GameHeader 
+        phase={state.phase} 
+        timeLeft={timerDetails.time} 
+        totalDuration={timerDetails.duration}
+        round={state.currentVotingRound}
+      />
       <div className="flex-1 overflow-hidden">
-        {state.phase === "CHAT" && (
+        {state.phase === "CHAT" || state.phase === 'VOTING' ? (
           <ChatScreen
             players={state.players}
             messages={state.messages}
             typingPlayers={state.typingPlayers}
             onSendMessage={handleSendMessage}
-            isVotingEnabled={state.isVotingEnabled}
+            isVotingEnabled={state.phase === 'VOTING'}
             onVote={handleVote}
             votes={state.votes}
             humanVote={state.humanVote}
+            hasHumanVotedThisRound={state.hasHumanVotedThisRound}
           />
-        )}
-        {state.phase === "RESULTS" && (
+        ) : (
           <ResultsScreen
             players={state.players}
             onReturnToLobby={onReturnToLobby}
@@ -337,6 +361,12 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
           />
         )}
       </div>
+      <HowToVoteDialog 
+        isOpen={state.showVoteDialog}
+        onClose={() => dispatch({ type: 'SHOW_VOTE_DIALOG', payload: false })}
+        onConfirm={() => dispatch({ type: 'START_VOTING_ROUND' })}
+        round={state.currentVotingRound + 1}
+      />
       <PlayerKickedDialog 
         player={state.kickedPlayer}
         isOpen={!!state.kickedPlayer}

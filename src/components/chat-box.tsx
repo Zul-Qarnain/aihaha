@@ -1,3 +1,4 @@
+
 "use client";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -17,9 +18,10 @@ interface ChatBoxProps {
   typingPlayers: Set<string>;
   allPlayers: Player[];
   onSendMessage: (message: string) => void;
+  isChatDisabled?: boolean;
 }
 
-export function ChatBox({ messages, typingPlayers, allPlayers, onSendMessage }: ChatBoxProps) {
+export function ChatBox({ messages, typingPlayers, allPlayers, onSendMessage, isChatDisabled = false }: ChatBoxProps) {
   const [input, setInput] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -32,7 +34,7 @@ export function ChatBox({ messages, typingPlayers, allPlayers, onSendMessage }: 
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (input.trim()) {
+    if (input.trim() && !isChatDisabled) {
       const wordCount = input.trim().split(/\s+/).length;
       if (wordCount > 15) {
         toast({
@@ -86,10 +88,11 @@ export function ChatBox({ messages, typingPlayers, allPlayers, onSendMessage }: 
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Type your message... (15 words max)"
+            placeholder={isChatDisabled ? "Chat disabled during voting..." : "Type your message... (15 words max)"}
             className="flex-1 bg-background focus:ring-accent"
+            disabled={isChatDisabled}
           />
-          <Button type="submit" size="icon" variant="ghost" className="bg-primary/20 hover:bg-primary/40">
+          <Button type="submit" size="icon" variant="ghost" className="bg-primary/20 hover:bg-primary/40" disabled={isChatDisabled}>
             <SendHorizonal className="h-5 w-5 text-primary" />
           </Button>
         </form>

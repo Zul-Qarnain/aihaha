@@ -23,19 +23,20 @@ function formatTime(seconds: number) {
     .padStart(2, "0")}`;
 }
 
-const GAME_DURATION = 360; // 6 minutes
-const VOTE_DURATION = 60; // 1 minute
-
 export function GameHeader({
   phase,
   timeLeft,
+  totalDuration,
+  round,
 }: {
   phase: GamePhase;
   timeLeft: number;
+  totalDuration: number;
+  round: number;
 }) {
   const PhaseIcon = phaseDetails[phase].icon;
-  const totalDuration = phase === 'CHAT' ? GAME_DURATION : VOTE_DURATION;
   const progress = (timeLeft / totalDuration) * 100;
+  const phaseText = phase === 'VOTING' ? `Voting Round ${round}` : phaseDetails[phase].text;
 
   return (
     <header className="p-4 border-b border-primary/10 bg-background/50 backdrop-blur-sm">
@@ -53,14 +54,14 @@ export function GameHeader({
               size={56} 
               strokeWidth={4} 
               className={cn(
-                phase === 'VOTING' ? 'text-destructive' : 'text-primary',
+                phase === 'VOTING' ? 'text-accent' : 'text-primary',
                 phase === 'RESULTS' && 'text-primary'
               )}
             >
                 <PhaseIcon className="h-5 w-5" />
             </CircularProgress>
             <div className="flex flex-col text-left">
-                <span className="text-xs text-muted-foreground uppercase tracking-widest">{phaseDetails[phase].text}</span>
+                <span className="text-xs text-muted-foreground uppercase tracking-widest">{phaseText}</span>
                 <span className="text-2xl font-bold font-mono text-primary-foreground tabular-nums">
                     {formatTime(timeLeft)}
                 </span>
