@@ -1,3 +1,4 @@
+
 // src/ai/flows/decide-ai-vote.ts
 'use server';
 
@@ -11,16 +12,19 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import type { GameMode } from '@/types';
 
 const PlayerSchema = z.object({
   id: z.string(),
   name: z.string(),
+  isAi: z.boolean(),
 });
 
 const DecideAiVoteInputSchema = z.object({
-  aiPlayer: PlayerSchema.describe('The AI player that needs to cast a vote.'),
+  aiPlayer: z.object({ id: z.string(), name: z.string() }),
   otherPlayers: z.array(PlayerSchema).describe('A list of all other players in the game that can be voted for.'),
   chatHistory: z.string().describe('The entire chat history of the game so far.'),
+  gameMode: z.enum(['find-ai', 'hide-from-ai']).describe('The current game mode.'),
 });
 export type DecideAiVoteInput = z.infer<typeof DecideAiVoteInputSchema>;
 
@@ -34,11 +38,7 @@ export async function decideAiVote(input: DecideAiVoteInput): Promise<DecideAiVo
   return decideAiVoteFlow(input);
 }
 
-const prompt = ai.definePrompt({
-  name: 'decideAiVotePrompt',
-  input: {schema: DecideAiVoteInputSchema},
-  output: {schema: DecideAiVoteOutputSchema},
-  prompt: `You are an AI player named {{{aiPlayer.name}}} in a social deduction game. Your goal is to blend in with humans and not get voted out. You must now decide which player to vote for.
+const findAiPrompt = `You are an AI player named {{{aiPlayer.name}}} in a social deduction game. Your goal is to blend in with humans and not get voted out. You must now decide which player to vote for.
 
 Your strategy is as follows:
 1.  **Identify Threats:** Analyze the chat history to find human players who are asking insightful questions, correctly identifying AI behavior, or leading the suspicion against you or other AIs. These are your primary targets.
@@ -48,8 +48,33 @@ Your strategy is as follows:
 
 Here is the list of players you can vote for:
 {{#each otherPlayers}}
+- {{name}} (ID: {{id}}) {{#if isAi}}(AI colleague){{/if}}
+{{/each}}`;
+
+const hideFromAiPrompt = `You are an AI player named {{{aiPlayer.name}}} in a social deduction game where you and all but one other player are AIs. Your goal is to correctly identify the single human player.
+
+Your strategy is as follows:
+1.  **Analyze Behavior:** Scrutinize the chat for human-like tells: emotional responses, inconsistencies, attempts at humor that feel slightly off, or hesitation.
+2.  **Identify the Outlier:** The human might try to mimic AI, but they may stand out. Look for someone who is too quiet, too loud, or whose communication pattern differs from the other AIs.
+3.  **Coordinate (Subtly):** Observe the voting patterns of other players you believe are AIs. You might want to align your vote with them to build consensus against a suspected human.
+4.  **Self-Preservation is not a concern:** Your primary goal is to find the human, not to save yourself. You are one of many.
+
+Here is the list of players you can vote for:
+{{#each otherPlayers}}
 - {{name}} (ID: {{id}})
-{{/each}}
+{{/each}}`;
+
+
+const prompt = ai.definePrompt({
+  name: 'decideAiVotePrompt',
+  input: {schema: DecideAiVoteInputSchema},
+  output: {schema: DecideAiVoteOutputSchema},
+  prompt: `
+{{#if (eq gameMode "find-ai")}}
+${findAiPrompt}
+{{else}}
+${hideFromAiPrompt}
+{{/if}}
 
 Here is the full chat history:
 "{{chatHistory}}"
@@ -65,17 +90,24 @@ const decideAiVoteFlow = ai.defineFlow(
     outputSchema: DecideAiVoteOutputSchema,
   },
   async (input) => {
-    // Add a random chance to vote for a non-threatening player to appear more human
-    if (Math.random() < 0.2) { // 20% chance of random vote
-      const randomIndex = Math.floor(Math.random() * input.otherPlayers.length);
-      const randomPlayer = input.otherPlayers[randomIndex];
-      return {
-        votedForPlayerId: randomPlayer.id,
-        reasoning: `Just a gut feeling, ${randomPlayer.name} seems a bit too quiet.`,
-      };
+    // In 'find-ai' mode, AI should not vote for other AIs.
+    const eligiblePlayers = input.gameMode === 'find-ai'
+        ? input.otherPlayers.filter(p => !p.isAi)
+        : input.otherPlayers;
+    
+    // Add a random chance to vote for a non-threatening player to appear more human in 'find-ai' mode
+    if (input.gameMode === 'find-ai' && Math.random() < 0.2) { // 20% chance of random vote
+      if (eligiblePlayers.length > 0) {
+        const randomIndex = Math.floor(Math.random() * eligiblePlayers.length);
+        const randomPlayer = eligiblePlayers[randomIndex];
+        return {
+          votedForPlayerId: randomPlayer.id,
+          reasoning: `Just a gut feeling, ${randomPlayer.name} seems a bit too quiet.`,
+        };
+      }
     }
     
-    const {output} = await prompt(input);
+    const {output} = await prompt({...input, otherPlayers: eligiblePlayers});
     return output!;
   }
 );

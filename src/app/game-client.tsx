@@ -41,30 +41,34 @@ const availablePlayerPool: Omit<Player, 'id' | 'isAi' | 'status'>[] = [
     { name: 'Helia', avatar: 'https://placehold.co/128x128/95A5A6/000000.png', 'data-ai-hint': 'sun goddess' },
 ];
 
-function generatePlayers(playerCount: number, aiCount: number): Player[] {
+function generatePlayers(settings: GameSettings): Player[] {
     const humanPlayer: Player = { id: HUMAN_PLAYER_ID, name: "You", avatar: `https://placehold.co/128x128/7F56D9/FFFFFF.png`, 'data-ai-hint': "futuristic avatar", isAi: false, status: 'active' };
     
     const shuffledPool = [...availablePlayerPool].sort(() => 0.5 - Math.random());
-    const selectedNpcs = shuffledPool.slice(0, playerCount - 1);
+    const selectedNpcs = shuffledPool.slice(0, settings.playerCount - 1);
     
     let playersWithoutRoles: Player[] = selectedNpcs.map((p, i) => ({
         ...p,
         id: `player_${i + 2}`,
-        isAi: false,
+        isAi: false, // Default to human, will be updated based on mode
         status: 'active',
     }));
 
-    const npcIndices = Array.from(Array(playersWithoutRoles.length).keys());
-    const shuffledNpcIndices = npcIndices.sort(() => 0.5 - Math.random());
-    const aiIndices = shuffledNpcIndices.slice(0, aiCount);
-
-    playersWithoutRoles = playersWithoutRoles.map((p, i) => ({
-        ...p,
-        isAi: aiIndices.includes(i),
-    }));
+    if (settings.gameMode === 'find-ai') {
+        const npcIndices = Array.from(Array(playersWithoutRoles.length).keys());
+        const shuffledNpcIndices = npcIndices.sort(() => 0.5 - Math.random());
+        const aiIndices = shuffledNpcIndices.slice(0, settings.aiCount);
+        playersWithoutRoles = playersWithoutRoles.map((p, i) => ({
+            ...p,
+            isAi: aiIndices.includes(i),
+        }));
+    } else { // 'hide-from-ai' mode
+        playersWithoutRoles = playersWithoutRoles.map(p => ({ ...p, isAi: true }));
+    }
 
     return [humanPlayer, ...playersWithoutRoles];
 }
+
 
 interface GameState {
   phase: GamePhase;
@@ -75,10 +79,12 @@ interface GameState {
   votes: Vote[];
   kickedPlayer: Player | null;
   aiCount: number;
+  humanCount: number;
   humanVote: string | null;
   showVoteDialog: boolean;
   currentRound: number;
   hasHumanVotedThisRound: boolean;
+  gameMode: 'find-ai' | 'hide-from-ai';
 }
 
 type Action =
@@ -160,10 +166,12 @@ function gameReducer(state: GameState, action: Action): GameState {
         return state;
     }
     case "UPDATE_AFTER_KICK":
+        const { kickedPlayer } = action.payload;
         return {
             ...state,
             players: action.payload.newPlayers,
-            aiCount: action.payload.kickedPlayer.isAi ? state.aiCount - 1 : state.aiCount,
+            aiCount: kickedPlayer.isAi ? state.aiCount - 1 : state.aiCount,
+            humanCount: !kickedPlayer.isAi ? state.humanCount -1 : state.humanCount,
             kickedPlayer: null,
         }
     case "SET_HUMAN_VOTE":
@@ -187,7 +195,7 @@ interface GameClientProps {
 }
 
 export default function GameClient({ settings, onReturnToLobby }: GameClientProps) {
-  const [players] = useState(() => generatePlayers(settings.playerCount, settings.aiCount));
+  const [players] = useState(() => generatePlayers(settings));
   
   const [state, dispatch] = useReducer(gameReducer, {
       phase: "CHAT",
@@ -201,7 +209,9 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
       currentRound: 0,
       hasHumanVotedThisRound: false,
       players: players,
-      aiCount: settings.aiCount
+      aiCount: players.filter(p => p.isAi).length,
+      humanCount: players.filter(p => !p.isAi).length,
+      gameMode: settings.gameMode,
   });
 
   const { toast } = useToast();
@@ -227,8 +237,18 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
     const activePlayersCount = state.players.filter(p => p.status === 'active').length;
     
     // Check end conditions right after a potential kick
-    if (state.aiCount === 0 || activePlayersCount <= MIN_PLAYERS_END_CONDITION || state.currentRound >= MAX_ROUNDS) {
-        // Only end game if not already in results, and not currently showing a kick dialog
+    let shouldEndGame = false;
+    if (state.gameMode === 'find-ai') {
+        if (state.aiCount === 0 || activePlayersCount <= MIN_PLAYERS_END_CONDITION || state.currentRound >= MAX_ROUNDS) {
+            shouldEndGame = true;
+        }
+    } else { // 'hide-from-ai'
+        if (state.humanCount === 0 || state.currentRound >= MAX_ROUNDS) {
+            shouldEndGame = true;
+        }
+    }
+    
+    if (shouldEndGame) {
         if (state.phase !== 'RESULTS' && !state.kickedPlayer) {
           dispatch({ type: 'END_GAME' });
         }
@@ -242,7 +262,7 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
             dispatch({ type: 'START_CHAT' });
         }
     }
-  }, [state.phase, state.timeLeft, state.kickedPlayer, state.aiCount, state.players, state.currentRound]);
+  }, [state.phase, state.timeLeft, state.kickedPlayer, state.aiCount, state.humanCount, state.players, state.currentRound, state.gameMode]);
 
 
   // AI Logic Triggers
@@ -310,8 +330,9 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
                     if (otherPlayers.length > 0) {
                         const voteDecision = await decideAiVote({
                             aiPlayer: { id: player.id, name: player.name },
-                            otherPlayers: otherPlayers.map(p => ({id: p.id, name: p.name })),
-                            chatHistory
+                            otherPlayers: otherPlayers.map(p => ({id: p.id, name: p.name, isAi: p.isAi })),
+                            chatHistory,
+                            gameMode: state.gameMode,
                         });
                         dispatch({ type: 'CAST_VOTE', payload: { voterId: player.id, votedForId: voteDecision.votedForPlayerId } });
                     }
@@ -342,9 +363,23 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
       const newPlayers = state.players.map(p => p.id === state.kickedPlayer!.id ? { ...p, status: 'kicked' as const } : p);
       dispatch({type: 'UPDATE_AFTER_KICK', payload: { kickedPlayer: state.kickedPlayer, newPlayers }})
 
-      const activePlayersCount = newPlayers.filter(p => p.status === 'active').length;
+      // Check for end game conditions immediately after updating state
       const newAiCount = state.kickedPlayer.isAi ? state.aiCount - 1 : state.aiCount;
-      if (newAiCount === 0 || activePlayersCount <= MIN_PLAYERS_END_CONDITION || state.currentRound >= MAX_ROUNDS) {
+      const newHumanCount = !state.kickedPlayer.isAi ? state.humanCount -1 : state.humanCount;
+      const activePlayersCount = newPlayers.filter(p => p.status === 'active').length;
+
+      let shouldEndGame = false;
+      if (state.gameMode === 'find-ai') {
+          if (newAiCount === 0 || activePlayersCount <= MIN_PLAYERS_END_CONDITION || state.currentRound >= MAX_ROUNDS) {
+              shouldEndGame = true;
+          }
+      } else { // 'hide-from-ai'
+          if (newHumanCount === 0 || state.currentRound >= MAX_ROUNDS) {
+              shouldEndGame = true;
+          }
+      }
+
+      if (shouldEndGame) {
           dispatch({ type: 'END_GAME' });
       } else {
           dispatch({ type: 'START_CHAT' });
@@ -353,8 +388,16 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
   }
 
   const activePlayers = state.players.filter(p => p.status === 'active');
-  const humansWin = state.aiCount === 0;
-  const aiWins = !humansWin;
+  
+  const getWinCondition = () => {
+      if(state.gameMode === 'find-ai') {
+        return state.aiCount === 0; // Humans win if all AIs are caught
+      } else { // 'hide-from-ai'
+        return state.humanCount > 0; // Human wins if they survive
+      }
+  }
+  const humansWin = getWinCondition();
+
 
   const getTimerDetails = () => {
     if (state.phase === 'VOTING') {
@@ -393,6 +436,7 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
             players={state.players}
             onReturnToLobby={onReturnToLobby}
             humansWin={humansWin}
+            gameMode={state.gameMode}
           />
         )}
       </div>

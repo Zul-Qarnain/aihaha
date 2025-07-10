@@ -22,9 +22,10 @@ export interface Vote {
 
 export type GamePhase = 'CHAT' | 'VOTING' | 'RESULTS';
 
+export type GameMode = 'find-ai' | 'hide-from-ai';
+
 export interface GameSettings {
   playerCount: number;
   aiCount: number;
+  gameMode: GameMode;
 }
-
-    
