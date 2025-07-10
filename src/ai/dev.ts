@@ -4,3 +4,4 @@ config();
 import '@/ai/flows/remember-chat-threads.ts';
 import '@/ai/flows/simulate-human-like-response.ts';
 import '@/ai/flows/simulate-ai-responses.ts';
+import '@/ai/flows/decide-ai-vote.ts';

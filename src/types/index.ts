@@ -4,6 +4,7 @@ export interface Player {
   name: string;
   avatar: string;
   isAi: boolean;
+  status: 'active' | 'kicked';
   'data-ai-hint'?: string;
 }
 
@@ -19,7 +20,7 @@ export interface Vote {
   votedForId: string;
 }
 
-export type GamePhase = 'CHAT' | 'VOTING' | 'RESULTS';
+export type GamePhase = 'CHAT' | 'RESULTS';
 
 export interface GameSettings {
   playerCount: number;

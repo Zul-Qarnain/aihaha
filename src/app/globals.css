@@ -23,7 +23,6 @@
     --border: 215 28% 17%;
     --input: 215 28% 17%;
     --ring: 175 90% 45%;
-    --radius: 0.8rem;
   }
 
   .dark {
@@ -75,4 +74,17 @@
 
 .fade-in-scale {
   animation: fadeInScale 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    box-shadow: 0 0 0 0 hsl(var(--destructive) / 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 4px hsl(var(--destructive) / 0);
+  }
+}
+
+.animate-pulse-border {
+  animation: pulse-border 2s infinite;
 }

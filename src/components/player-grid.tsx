@@ -6,46 +6,40 @@ import { ScrollArea } from "./ui/scroll-area";
 
 interface PlayerGridProps {
   players: Player[];
-  isVotingPhase?: boolean;
-  humanVotedFor?: string | null;
+  isVotingEnabled?: boolean;
   onVote?: (playerId: string) => void;
-  isResultsPhase?: boolean;
+  humanVote?: string | null;
   votes?: Vote[];
+  isResultsPhase?: boolean;
 }
 
 export function PlayerGrid({
   players,
-  isVotingPhase = false,
-  humanVotedFor,
+  isVotingEnabled = false,
   onVote,
-  isResultsPhase = false,
+  humanVote,
   votes = [],
+  isResultsPhase = false
 }: PlayerGridProps) {
-  const humanPlayerId = players.find(p => p.name === 'You')?.id;
-  
+    const voteCounts = votes.reduce((acc, vote) => {
+        acc[vote.votedForId] = (acc[vote.votedForId] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>);
+
   return (
     <ScrollArea className="h-full">
         <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 p-1">
-        {players.map((player) => {
-            const votesForThisPlayer = isResultsPhase ? 
-                votes.filter(v => v.votedForId === player.id)
-                    .map(v => players.find(p => p.id === v.voterId)!)
-                    .filter(Boolean) : [];
-            return (
+        {players.map((player) => (
             <PlayerCard
                 key={player.id}
                 player={player}
-                isVotingPhase={isVotingPhase}
-                isSelected={humanVotedFor === player.id}
+                isVotingEnabled={isVotingEnabled}
                 onVote={onVote}
-                isResultsPhase={isResultsPhase}
-                isRevealedAi={isResultsPhase && player.isAi}
-                votesReceived={votesForThisPlayer}
-                humanPlayerId={humanPlayerId}
-                isHumanPlayerCard={player.id === humanPlayerId}
+                humanVote={humanVote}
+                votesReceivedCount={voteCounts[player.id] || 0}
+                isRevealed={isResultsPhase || player.status === 'kicked'}
             />
-            );
-        })}
+        ))}
         </div>
     </ScrollArea>
   );

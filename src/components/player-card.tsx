@@ -9,82 +9,69 @@ import { Bot, Check, User, Vote as VoteIcon } from "lucide-react";
 
 interface PlayerCardProps {
   player: Player;
-  isVotingPhase?: boolean;
-  isSelected?: boolean;
+  isVotingEnabled?: boolean;
   onVote?: (playerId: string) => void;
-  isResultsPhase?: boolean;
-  isRevealedAi?: boolean;
-  votesReceived?: Player[];
-  humanPlayerId?: string;
-  isHumanPlayerCard?: boolean;
+  humanVote?: string | null;
+  votesReceivedCount?: number;
+  isRevealed?: boolean;
 }
 
 export function PlayerCard({
   player,
-  isVotingPhase = false,
-  isSelected = false,
+  isVotingEnabled = false,
   onVote,
-  isResultsPhase = false,
-  isRevealedAi = false,
-  votesReceived = [],
-  humanPlayerId,
-  isHumanPlayerCard = false
+  humanVote,
+  votesReceivedCount = 0,
+  isRevealed = false
 }: PlayerCardProps) {
   const handleVoteClick = () => {
-    if (onVote && !isHumanPlayerCard) {
+    if (onVote && player.status === 'active' && isVotingEnabled && player.name !== "You") {
       onVote(player.id);
     }
   };
 
+  const isSelectedByHuman = humanVote === player.id;
+
   const cardClasses = cn(
     "text-center transition-all duration-300 relative overflow-hidden",
-    isVotingPhase && !isHumanPlayerCard && "cursor-pointer hover:shadow-primary/40 hover:shadow-lg hover:-translate-y-1",
-    isVotingPhase && isSelected && "ring-2 ring-accent ring-offset-2 ring-offset-background",
-    isVotingPhase && isHumanPlayerCard && "opacity-50 cursor-not-allowed",
-    isResultsPhase && isRevealedAi && "ring-2 ring-destructive",
-    isResultsPhase && !isRevealedAi && "ring-2 ring-green-500"
+    player.status === 'active' && isVotingEnabled && player.name !== "You" && "cursor-pointer hover:shadow-primary/40 hover:shadow-lg hover:-translate-y-1",
+    isSelectedByHuman && "ring-2 ring-accent ring-offset-2 ring-offset-background",
+    player.status === 'kicked' && "opacity-40 grayscale",
+    player.name === "You" && isVotingEnabled && "cursor-not-allowed"
   );
-
+  
   return (
     <Card className={cardClasses} onClick={handleVoteClick}>
-      <CardContent className="p-4 flex flex-col items-center gap-2">
+      <CardContent className="p-4 flex flex-col items-center gap-2 relative">
+        {votesReceivedCount > 0 && (
+            <div className="absolute top-1 left-1 bg-destructive text-destructive-foreground w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold animate-pulse-border">
+                {votesReceivedCount}
+            </div>
+        )}
         <div className="relative">
           <Avatar className="w-20 h-20 border-2 border-primary/20">
             <AvatarImage src={player.avatar} alt={player.name} data-ai-hint={player.isAi ? "robot face" : "futuristic avatar"} />
             <AvatarFallback>{player.name.charAt(0)}</AvatarFallback>
           </Avatar>
-          {isResultsPhase && (
+          {isRevealed && (
              <div className="absolute -bottom-2 -right-2 bg-card p-1 rounded-full border border-border">
-                {isRevealedAi ? <Bot className="w-5 h-5 text-destructive" /> : <User className="w-5 h-5 text-green-500" />}
+                {player.isAi ? <Bot className="w-5 h-5 text-destructive" /> : <User className="w-5 h-5 text-green-500" />}
              </div>
           )}
         </div>
         <h3 className="font-bold text-lg font-headline">{player.name}</h3>
         
-        {isVotingPhase && !isHumanPlayerCard && (
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-            {isSelected ? (
-              <Button variant="ghost" size="lg" className="text-accent bg-accent/10">
+        {player.status === 'active' && isVotingEnabled && player.name !== "You" && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+            {isSelectedByHuman ? (
+              <Button variant="ghost" size="lg" className="text-accent bg-accent/10 pointer-events-none">
                 <Check className="mr-2 h-5 w-5" /> Voted
               </Button>
             ) : (
-              <Button variant="ghost" size="lg">
+              <Button variant="ghost" size="lg" className="pointer-events-none">
                 <VoteIcon className="mr-2 h-5 w-5" /> Vote
               </Button>
             )}
-          </div>
-        )}
-        {isResultsPhase && votesReceived.length > 0 && (
-          <div className="absolute top-1 right-1 flex flex-col gap-1 items-center">
-            <p className="text-xs text-muted-foreground">Voted by:</p>
-            <div className="flex -space-x-3">
-              {votesReceived.map(voter => (
-                <Avatar key={voter.id} className="w-6 h-6 border-2 border-background">
-                  <AvatarImage src={voter.avatar} alt={voter.name} />
-                  <AvatarFallback>{voter.name.charAt(0)}</AvatarFallback>
-                </Avatar>
-              ))}
-            </div>
           </div>
         )}
       </CardContent>
