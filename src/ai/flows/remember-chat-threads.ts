@@ -33,6 +33,7 @@ const rememberChatThreadsPrompt = ai.definePrompt({
   name: 'rememberChatThreadsPrompt',
   input: {schema: RememberChatThreadsInputSchema},
   output: {schema: RememberChatThreadsOutputSchema},
+  model: 'groq/llama-3.1-8b-instant', // Fast Groq model
   prompt: `You are participating in a game where some players are humans and others are AIs trying to pass as humans.
   Your goal as an AI is to blend in and not be detected. Remember that the game is 6 minutes long and you are supposed to mimic human behavior.
 
@@ -40,11 +41,18 @@ const rememberChatThreadsPrompt = ai.definePrompt({
 
   Now, respond to the following message from player {{{playerId}}}: "{{{message}}}". Incorporate elements from the chat history to make your response seem natural and consistent. Use slang, emojis, and occasional spelling errors.
 
-  Also, update the chat history with your response to maintain context for future messages. The chat history has to be formatted as a single string with each turn separated by a newline, for example:
-  PlayerA: Hello
-  AI: Hi there!
+  You MUST respond with EXACTLY this JSON format:
+  {
+    "response": "your AI response here",
+    "updatedChatHistory": "updated chat history including your response"
+  }
 
-  Return the AI's response as well as the updated chat history.
+  Make sure your response is casual and human-like. The updated chat history should include the new message and your response, formatted as:
+  Previous history...
+  {{{playerId}}}: {{{message}}}
+  You: your response
+
+  IMPORTANT: Only return valid JSON in the exact format shown above.
   `,
 });
 
@@ -55,7 +63,26 @@ const rememberChatThreadsFlow = ai.defineFlow(
     outputSchema: RememberChatThreadsOutputSchema,
   },
   async input => {
-    const {output} = await rememberChatThreadsPrompt(input);
-    return output!;
+    try {
+      const {output} = await rememberChatThreadsPrompt(input);
+      
+      // Validate the output and provide fallback if needed
+      if (!output || !output.response || !output.updatedChatHistory) {
+        console.warn('AI response missing required fields, using fallback');
+        return {
+          response: "Hey! 👋",
+          updatedChatHistory: `${input.chatHistory || ''}\n${input.playerId}: ${input.message}\nAI: Hey! 👋`
+        };
+      }
+      
+      return output;
+    } catch (error) {
+      console.error('Error in rememberChatThreadsFlow:', error);
+      // Provide a fallback response if the AI fails
+      return {
+        response: "Hey! 👋",
+        updatedChatHistory: `${input.chatHistory || ''}\n${input.playerId}: ${input.message}\nAI: Hey! 👋`
+      };
+    }
   }
 );

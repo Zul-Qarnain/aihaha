@@ -32,6 +32,7 @@ const prompt = ai.definePrompt({
   name: 'simulateHumanLikeResponsePrompt',
   input: {schema: SimulateHumanLikeResponseInputSchema},
   output: {schema: SimulateHumanLikeResponseOutputSchema},
+  model: 'groq/llama-3.1-8b-instant', // Fast Groq model
   prompt: `You are simulating a human player in a social deduction game. Your goal is to blend in and not be detected as an AI.
 
   Incorporate slang, emojis, and occasional spelling errors into your responses to mimic human conversation.

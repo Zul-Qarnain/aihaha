@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    serverActions: {
+      allowedOrigins: ['localhost:9002', '*.app.github.dev'],
+    },
+  },
   images: {
     remotePatterns: [
       {

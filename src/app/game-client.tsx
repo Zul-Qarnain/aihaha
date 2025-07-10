@@ -202,9 +202,9 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
   const [players] = useState(() => generatePlayers(settings));
   
   const [state, dispatch] = useReducer(gameReducer, {
-      phase: "CHAT",
+      phase: "CHAT" as GamePhase,
       messages: [],
-      typingPlayers: new Set(),
+      typingPlayers: new Set<string>(),
       timeLeft: CHAT_DURATION,
       votes: [],
       kickedPlayer: null,
@@ -213,8 +213,8 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
       currentRound: 0,
       hasHumanVotedThisRound: false,
       players: players,
-      aiCount: players.filter(p => p.isAi).length,
-      humanCount: players.filter(p => !p.isAi).length,
+      aiCount: players.filter((p: Player) => p.isAi).length,
+      humanCount: players.filter((p: Player) => !p.isAi).length,
       gameMode: settings.gameMode,
   });
 
@@ -244,7 +244,7 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
     if (state.kickedPlayer) return;
   
     // If no one was kicked, check end conditions or start next round
-    const activePlayersCount = state.players.filter(p => p.status === 'active').length;
+    const activePlayersCount = state.players.filter((p: Player) => p.status === 'active').length;
     let shouldEndGame = false;
   
     if (state.gameMode === 'find-ai') {
@@ -274,7 +274,7 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
 
 
   const handleSendMessage = async (text: string) => {
-    const humanPlayer = state.players.find((p) => p.id === HUMAN_PLAYER_ID)!;
+    const humanPlayer = state.players.find((p: Player) => p.id === HUMAN_PLAYER_ID)!;
     const newMessage: Message = {
       id: `${Date.now()}`,
       player: humanPlayer,
@@ -286,7 +286,7 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
   
   const triggerAiChatResponses = async (latestMessage: string) => {
     const chatHistory = state.messages
-      .map((msg) => `${msg.player.name}: ${msg.text}`)
+      .map((msg: Message) => `${msg.player.name}: ${msg.text}`)
       .join("\n");
 
     for (const player of state.players) {
@@ -327,16 +327,16 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
   };
 
   const triggerAiVotes = async () => {
-    const chatHistory = state.messages.map((msg) => `${msg.player.name}: ${msg.text}`).join("\n");
+    const chatHistory = state.messages.map((msg: Message) => `${msg.player.name}: ${msg.text}`).join("\n");
     for (const player of state.players) {
         if (player.isAi && player.status === 'active') {
              setTimeout(async () => {
                 try {
-                    const otherPlayers = state.players.filter(p => p.id !== player.id && p.status === 'active');
+                    const otherPlayers = state.players.filter((p: Player) => p.id !== player.id && p.status === 'active');
                     if (otherPlayers.length > 0) {
                         const voteDecision = await decideAiVote({
                             aiPlayer: { id: player.id, name: player.name },
-                            otherPlayers: otherPlayers.map(p => ({id: p.id, name: p.name, isAi: p.isAi })),
+                            otherPlayers: otherPlayers.map((p: Player) => ({id: p.id, name: p.name, isAi: p.isAi })),
                             chatHistory,
                             gameMode: state.gameMode,
                         });
@@ -372,7 +372,7 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
     // The player data is already updated from PROCESS_VOTES, so we just update counts
     dispatch({type: 'UPDATE_AFTER_KICK', payload: { kickedPlayer: state.kickedPlayer, newPlayers: state.players }})
 
-    const activePlayersCount = state.players.filter(p => p.status === 'active').length;
+    const activePlayersCount = state.players.filter((p: Player) => p.status === 'active').length;
     const newAiCount = state.kickedPlayer.isAi ? state.aiCount - 1 : state.aiCount;
     const newHumanCount = !state.kickedPlayer.isAi ? state.humanCount -1 : state.humanCount;
 
@@ -394,7 +394,7 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
     }
   }
 
-  const activePlayers = state.players.filter(p => p.status === 'active');
+  const activePlayers = state.players.filter((p: Player) => p.status === 'active');
   
   const getWinCondition = () => {
       if (state.phase !== 'RESULTS') {
@@ -408,10 +408,10 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
       }
       // If already in results, use the determined outcome
       if(state.gameMode === 'find-ai') {
-        const activeAi = state.players.filter(p => p.isAi && p.status === 'active').length;
+        const activeAi = state.players.filter((p: Player) => p.isAi && p.status === 'active').length;
         return activeAi === 0;
       } else { // 'hide-from-ai'
-        const activeHumans = state.players.filter(p => !p.isAi && p.status === 'active').length;
+        const activeHumans = state.players.filter((p: Player) => !p.isAi && p.status === 'active').length;
         return activeHumans > 0;
       }
   }
@@ -437,6 +437,7 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
         timeLeft={timerDetails.time} 
         totalDuration={timerDetails.duration}
         round={state.currentRound > 0 ? state.currentRound : 1}
+        onLeaveGame={onReturnToLobby}
       />
       <div className="flex-1 overflow-hidden">
         {state.phase === "CHAT" || state.phase === 'VOTING' ? (

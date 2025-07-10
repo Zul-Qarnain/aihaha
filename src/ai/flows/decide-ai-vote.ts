@@ -3,7 +3,32 @@
 'use server';
 
 /**
- * @fileOverview Defines the AI logic for strategically voting in the "Who's the AI?" game.
+ * @fileOvervconst prompt = ai.definePrompt({
+  name: 'decideAiVotePrompt',
+  input: {schema: DecideAiVoteInputSchema},
+  output: {schema: DecideAiVoteOutputSchema},
+  model: 'groq/llama-3.1-8b-instant', // Fast Groq model
+  prompt: `
+{{#if (eq gameMode 'find-ai')}}
+${findAiPrompt}
+{{else}}
+${hideFromAiPrompt}
+{{/if}}
+
+Here is the full chat history:
+"{{chatHistory}}"
+
+Based on your strategy and the chat history, decide which player to vote for. 
+
+You MUST respond with EXACTLY this JSON format:
+{
+  "votedForPlayerId": "player_id_here",
+  "reasoning": "brief human-like justification here"
+}
+
+IMPORTANT: Only return valid JSON in the exact format shown above.
+`,
+}); logic for strategically voting in the "Who's the AI?" game.
  *
  * - decideAiVote - A function that determines which player an AI should vote for.
  * - DecideAiVoteInput - The input type for the decideAiVote function.
@@ -69,6 +94,7 @@ const prompt = ai.definePrompt({
   name: 'decideAiVotePrompt',
   input: {schema: DecideAiVoteInputSchema},
   output: {schema: DecideAiVoteOutputSchema},
+  model: 'groq/llama-3.1-8b-instant', // Fast Groq model
   prompt: `
 {{#if (eq gameMode "find-ai")}}
 ${findAiPrompt}
@@ -107,7 +133,45 @@ const decideAiVoteFlow = ai.defineFlow(
       }
     }
     
-    const {output} = await prompt({...input, otherPlayers: eligiblePlayers});
-    return output!;
+    try {
+      const {output} = await prompt({...input, otherPlayers: eligiblePlayers});
+      
+      // Validate the output and provide fallback if needed
+      if (!output || !output.votedForPlayerId || !output.reasoning) {
+        console.warn('AI vote response missing required fields, using fallback');
+        if (eligiblePlayers.length > 0) {
+          const fallbackPlayer = eligiblePlayers[0];
+          return {
+            votedForPlayerId: fallbackPlayer.id,
+            reasoning: `${fallbackPlayer.name} seems sus to me`
+          };
+        }
+        // If no eligible players, return the first available player
+        const firstPlayer = input.otherPlayers[0];
+        return {
+          votedForPlayerId: firstPlayer.id,
+          reasoning: `Random vote - ${firstPlayer.name}`
+        };
+      }
+      
+      return output;
+    } catch (error) {
+      console.error('Error in decideAiVoteFlow:', error);
+      // Provide a fallback response if the AI fails
+      if (eligiblePlayers.length > 0) {
+        const fallbackPlayer = eligiblePlayers[0];
+        return {
+          votedForPlayerId: fallbackPlayer.id,
+          reasoning: `${fallbackPlayer.name} seems suspicious`
+        };
+      }
+      
+      // If no eligible players, return the first available player
+      const firstPlayer = input.otherPlayers[0];
+      return {
+        votedForPlayerId: firstPlayer.id,
+        reasoning: `Random vote - ${firstPlayer.name}`
+      };
+    }
   }
 );

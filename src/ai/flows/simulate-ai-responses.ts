@@ -31,6 +31,7 @@ const prompt = ai.definePrompt({
   name: 'simulateAiResponsesPrompt',
   input: {schema: SimulateAiResponsesInputSchema},
   output: {schema: SimulateAiResponsesOutputSchema},
+  model: 'groq/llama-3.1-8b-instant', // Fast Groq model
   prompt: `You are an AI trying to mimic human-like responses in a social deduction game. Your goal is to blend in with the human players and avoid being detected.
 
   Incorporate slang, emojis, and occasional spelling errors into your responses to make them sound natural and indistinguishable from human conversation.
@@ -41,6 +42,13 @@ const prompt = ai.definePrompt({
   Current chat history: {{{chatHistory}}}
 
   Respond to the following message: {{{message}}}
+
+  You MUST respond with EXACTLY this JSON format:
+  {
+    "response": "your casual human-like response here"
+  }
+
+  IMPORTANT: Only return valid JSON in the exact format shown above.
   `,
 });
 
@@ -51,7 +59,24 @@ const simulateAiResponsesFlow = ai.defineFlow(
     outputSchema: SimulateAiResponsesOutputSchema,
   },
   async input => {
-    const {output} = await prompt(input);
-    return output!;
+    try {
+      const {output} = await prompt(input);
+      
+      // Validate the output and provide fallback if needed
+      if (!output || !output.response) {
+        console.warn('AI response missing required fields, using fallback');
+        return {
+          response: "lol yeah totally! 😄"
+        };
+      }
+      
+      return output;
+    } catch (error) {
+      console.error('Error in simulateAiResponsesFlow:', error);
+      // Provide a fallback response if the AI fails
+      return {
+        response: "haha nice one! 👍"
+      };
+    }
   }
 );
