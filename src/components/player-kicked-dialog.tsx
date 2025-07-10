@@ -23,7 +23,7 @@ export function PlayerKickedDialog({ player, isOpen, onClose }: PlayerKickedDial
   if (!player) return null;
 
   return (
-    <AlertDialog open={isOpen} onOpenChange={onClose}>
+    <AlertDialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <AlertDialogContent className="text-center">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex flex-col items-center gap-4 text-2xl font-headline">
@@ -49,3 +49,5 @@ export function PlayerKickedDialog({ player, isOpen, onClose }: PlayerKickedDial
     </AlertDialog>
   );
 }
+
+    

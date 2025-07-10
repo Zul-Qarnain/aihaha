@@ -51,3 +51,5 @@ export function HowToVoteDialog({ isOpen, onClose, onConfirm, round }: HowToVote
     </AlertDialog>
   );
 }
+
+    

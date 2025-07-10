@@ -26,3 +26,5 @@ export interface GameSettings {
   playerCount: number;
   aiCount: number;
 }
+
+    

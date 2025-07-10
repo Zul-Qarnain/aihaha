@@ -35,8 +35,8 @@ export function GameHeader({
   round: number;
 }) {
   const PhaseIcon = phaseDetails[phase].icon;
-  const progress = (timeLeft / totalDuration) * 100;
-  const phaseText = phase === 'VOTING' ? `Voting Round ${round}` : phaseDetails[phase].text;
+  const progress = totalDuration > 0 ? (timeLeft / totalDuration) * 100 : 0;
+  const phaseText = phase === 'VOTING' ? `Voting Round ${round}` : `Chat - Round ${round}`;
 
   return (
     <header className="p-4 border-b border-primary/10 bg-background/50 backdrop-blur-sm">
@@ -71,3 +71,5 @@ export function GameHeader({
     </header>
   );
 }
+
+    
