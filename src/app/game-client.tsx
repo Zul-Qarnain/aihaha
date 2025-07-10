@@ -226,22 +226,23 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
   useEffect(() => {
     const activePlayersCount = state.players.filter(p => p.status === 'active').length;
     
-    // Check end conditions after kick dialog is closed
-    if (!state.kickedPlayer) {
-      if (state.aiCount === 0 || activePlayersCount <= MIN_PLAYERS_END_CONDITION || state.currentRound >= MAX_ROUNDS) {
-        if(state.phase !== 'RESULTS') dispatch({ type: 'END_GAME' });
+    // Check end conditions right after a potential kick
+    if (state.aiCount === 0 || activePlayersCount <= MIN_PLAYERS_END_CONDITION || state.currentRound >= MAX_ROUNDS) {
+        // Only end game if not already in results, and not currently showing a kick dialog
+        if (state.phase !== 'RESULTS' && !state.kickedPlayer) {
+          dispatch({ type: 'END_GAME' });
+        }
         return;
-      }
     }
     
     // Post-vote phase transition
     if (state.phase === 'VOTING' && state.timeLeft === 0) {
-        // If no one was kicked, move to next chat phase
+        // If no one was kicked (and the game hasn't ended), move to the next chat phase
         if (!state.kickedPlayer) {
             dispatch({ type: 'START_CHAT' });
         }
     }
-  }, [state.phase, state.kickedPlayer, state.aiCount, state.players, state.currentRound]);
+  }, [state.phase, state.timeLeft, state.kickedPlayer, state.aiCount, state.players, state.currentRound]);
 
 
   // AI Logic Triggers
@@ -340,12 +341,18 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
     if(state.kickedPlayer) {
       const newPlayers = state.players.map(p => p.id === state.kickedPlayer!.id ? { ...p, status: 'kicked' as const } : p);
       dispatch({type: 'UPDATE_AFTER_KICK', payload: { kickedPlayer: state.kickedPlayer, newPlayers }})
-      dispatch({ type: 'START_CHAT' });
+
+      const activePlayersCount = newPlayers.filter(p => p.status === 'active').length;
+      const newAiCount = state.kickedPlayer.isAi ? state.aiCount - 1 : state.aiCount;
+      if (newAiCount === 0 || activePlayersCount <= MIN_PLAYERS_END_CONDITION || state.currentRound >= MAX_ROUNDS) {
+          dispatch({ type: 'END_GAME' });
+      } else {
+          dispatch({ type: 'START_CHAT' });
+      }
     }
   }
 
   const activePlayers = state.players.filter(p => p.status === 'active');
-  const activeHumans = activePlayers.filter(p => !p.isAi);
   const humansWin = state.aiCount === 0;
   const aiWins = !humansWin;
 
@@ -403,5 +410,3 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
     </div>
   );
 }
-
-    
