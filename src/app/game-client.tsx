@@ -1,8 +1,7 @@
 
 "use client";
 
-import { rememberChatThreads } from "@/ai/flows/remember-chat-threads";
-import { decideAiVote } from "@/ai/flows/decide-ai-vote";
+import { ClientAIService } from "@/lib/client-ai-service";
 import { GameHeader } from "@/components/game-header";
 import ChatScreen from "@/components/screens/chat-screen";
 import ResultsScreen from "@/components/screens/results-screen";
@@ -285,72 +284,97 @@ export default function GameClient({ settings, onReturnToLobby }: GameClientProp
   };
   
   const triggerAiChatResponses = async (latestMessage: string) => {
-    const chatHistory = state.messages
-      .map((msg: Message) => `${msg.player.name}: ${msg.text}`)
-      .join("\n");
+    // Don't make AI calls if game hasn't started properly
+    if (state.phase !== 'CHAT' || state.timeLeft <= 0) return;
+    
+    // Add a delay to prevent blocking the UI
+    setTimeout(() => {
+      const chatHistory = state.messages
+        .map((msg: Message) => `${msg.player.name}: ${msg.text}`)
+        .join("\n");
 
-    for (const player of state.players) {
-      if (player.isAi && player.status === 'active') {
-        // Add a random chance for AI to not respond to keep the chat more natural
-        if (Math.random() > 0.85) continue;
+      for (const player of state.players) {
+        if (player.isAi && player.status === 'active') {
+          // Reduce AI response frequency to improve performance
+          if (Math.random() > 0.7) continue;
 
-        setTimeout(async () => {
-          dispatch({ type: "SET_TYPING", payload: { playerId: player.id, isTyping: true } });
-          try {
-            const aiResponse = await rememberChatThreads({
-                playerId: player.id,
-                message: latestMessage,
+          // Use longer delays to make responses more natural and less blocking
+          const responseDelay = 3000 + Math.random() * 5000; // 3-8 seconds
+          setTimeout(() => {
+            dispatch({ type: "SET_TYPING", payload: { playerId: player.id, isTyping: true } });
+            
+            // Make AI call asynchronous and handle errors gracefully
+            ClientAIService.simulatePlayerResponse({
+                playerName: player.name,
+                playerHint: player['data-ai-hint'] || 'AI player',
                 chatHistory,
+                gameMode: state.gameMode,
+            }).then((aiResponse: string) => {
+              // Ensure we always have a response
+              const finalResponse = aiResponse && aiResponse.trim() ? aiResponse : "I'm thinking...";
+              
+              setTimeout(() => {
+                  dispatch({ type: "SET_TYPING", payload: { playerId: player.id, isTyping: false } });
+                  const aiMessage: Message = {
+                      id: `${Date.now()}_${player.id}`,
+                      player,
+                      text: finalResponse,
+                      isAIMessage: true,
+                  };
+                  dispatch({ type: "ADD_MESSAGE", payload: aiMessage });
+              }, 1000 + Math.random() * 2000);
+            }).catch((error: any) => {
+              console.error(`AI response failed for ${player.name}:`, error);
+              // Always provide a fallback response
+              setTimeout(() => {
+                  dispatch({ type: "SET_TYPING", payload: { playerId: player.id, isTyping: false } });
+                  const fallbackMessage: Message = {
+                      id: `${Date.now()}_${player.id}`,
+                      player,
+                      text: "I'm processing what was said...",
+                      isAIMessage: true,
+                  };
+                  dispatch({ type: "ADD_MESSAGE", payload: fallbackMessage });
+              }, 1000);
             });
-            setTimeout(() => {
-                dispatch({ type: "SET_TYPING", payload: { playerId: player.id, isTyping: false } });
-                const aiMessage: Message = {
-                    id: `${Date.now()}`,
-                    player,
-                    text: aiResponse.response,
-                    isAIMessage: true,
-                };
-                dispatch({ type: "ADD_MESSAGE", payload: aiMessage });
-            }, 1000 + Math.random() * 2000);
-
-          } catch (error) {
-            console.error("AI response error:", error);
-            // Don't show toast for overload errors, just fail silently.
-            if (!(error instanceof Error && error.message.includes("503"))) {
-                 toast({ title: "AI Error", description: "Could not get AI response.", variant: "destructive"});
-            }
-            dispatch({ type: "SET_TYPING", payload: { playerId: player.id, isTyping: false } });
-          }
-        }, 500 + Math.random() * 1500);
+          }, responseDelay);
+        }
       }
-    }
+    }, 1000); // Initial delay before processing AI responses
   };
 
   const triggerAiVotes = async () => {
-    const chatHistory = state.messages.map((msg: Message) => `${msg.player.name}: ${msg.text}`).join("\n");
-    for (const player of state.players) {
-        if (player.isAi && player.status === 'active') {
-             setTimeout(async () => {
-                try {
-                    const otherPlayers = state.players.filter((p: Player) => p.id !== player.id && p.status === 'active');
-                    if (otherPlayers.length > 0) {
-                        const voteDecision = await decideAiVote({
-                            aiPlayer: { id: player.id, name: player.name },
-                            otherPlayers: otherPlayers.map((p: Player) => ({id: p.id, name: p.name, isAi: p.isAi })),
-                            chatHistory,
-                            gameMode: state.gameMode,
-                        });
-                        dispatch({ type: 'CAST_VOTE', payload: { voterId: player.id, votedForId: voteDecision.votedForPlayerId } });
-                    }
-                } catch (error) {
-                    console.error("AI vote error:", error);
-                     if (!(error instanceof Error && error.message.includes("503"))) {
-                        toast({ title: "AI Error", description: "Could not get AI vote.", variant: "destructive"});
-                     }
-                }
-            }, 1000 + Math.random() * 4000); // Stagger AI votes
-        }
-    }
+    // Don't make AI calls if voting hasn't started properly
+    if (state.phase !== 'VOTING' || state.timeLeft <= 0) return;
+    
+    // Add delay to prevent blocking
+    setTimeout(() => {
+      const chatHistory = state.messages.map((msg: Message) => `${msg.player.name}: ${msg.text}`).join("\n");
+      for (const player of state.players) {
+          if (player.isAi && player.status === 'active') {
+               const voteDelay = 2000 + Math.random() * 4000; // 2-6 seconds
+               setTimeout(() => {
+                  const otherPlayers = state.players.filter((p: Player) => p.id !== player.id && p.status === 'active');
+                  if (otherPlayers.length > 0) {
+                      // Make AI vote decision asynchronous
+                      ClientAIService.makeVoteDecision({
+                          aiPlayer: { id: player.id, name: player.name },
+                          otherPlayers: otherPlayers.map((p: Player) => ({id: p.id, name: p.name, isAi: p.isAi })),
+                          chatHistory,
+                          gameMode: state.gameMode,
+                      }).then((voteDecision: { votedForPlayerId: string }) => {
+                          dispatch({ type: 'CAST_VOTE', payload: { voterId: player.id, votedForId: voteDecision.votedForPlayerId } });
+                      }).catch((error: any) => {
+                          console.error("AI vote error:", error);
+                          // Fallback to random vote
+                          const randomPlayer = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
+                          dispatch({ type: 'CAST_VOTE', payload: { voterId: player.id, votedForId: randomPlayer.id } });
+                      });
+                  }
+               }, voteDelay);
+          }
+      }
+    }, 1000);
   };
 
   const handleVote = (votedForId: string) => {

@@ -10,7 +10,11 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     serverActions: {
-      allowedOrigins: ['localhost:9002', '*.app.github.dev'],
+      allowedOrigins: [
+        'localhost:9002', 
+        '*.app.github.dev',
+        'legendary-pancake-g666vxp965x2vgq9-9002.app.github.dev'
+      ],
     },
   },
   images: {
